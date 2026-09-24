@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trực quan hóa K-Nearest Neighbors (KNN)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --red: #ef4444;
+            --blue: #3b82f6;
+            --yellow: #eab308;
+            --bg: #f8fafc;
+            --panel-bg: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar Controls */
+        .sidebar {
+            width: 320px;
+            background-color: var(--panel-bg);
+            border-right: 1px solid var(--border);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+            z-index: 10;
+        }
+
+        h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            text-align: center;
+            color: #0f172a;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        label {
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .btn {
+            padding: 12px;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-red { background-color: #fee2e2; color: var(--red); border-color: #fca5a5; }
+        .btn-red.active { background-color: var(--red); color: white; }
+        
+        .btn-blue { background-color: #dbeafe; color: var(--blue); border-color: #93c5fd; }
+        .btn-blue.active { background-color: var(--blue); color: white; }
+        
+        .btn-test { background-color: #fef9c3; color: #ca8a04; border-color: #fde047; }
+        .btn-test.active { background-color: var(--yellow); color: white; }
+        
+        .btn-clear { background-color: #f1f5f9; color: #475569; border-color: var(--border); margin-top: auto; }
+        .btn-clear:hover { background-color: #e2e8f0; }
+
+        /* Result Box */
+        .result-box {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: #f8fafc;
+            border: 1px dashed var(--border);
+            text-align: center;
+            min-height: 80px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .result-title { font-size: 0.85rem; color: #64748b; margin-bottom: 5px; }
+        .result-value { font-size: 1.2rem; font-weight: 700; }
+
+        /* Canvas Area */
+        .main-content {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        canvas {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            cursor: crosshair;
+            border: 1px solid var(--border);
+        }
+
+        .instructions {
+            position: absolute;
+            top: 30px;
+            background: rgba(255,255,255,0.9);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            color: #475569;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Bảng điều khiển -->
+    <div class="sidebar">
+        <h1>Thuật toán KNN</h1>
+        
+        <div class="control-group">
+            <label>
+                <span>Số hàng xóm (K):</span>
+                <span id="k-value">3</span>
+            </label>
+            <input type="range" id="k-slider" min="1" max="15" step="1" value="3">
+        </div>
+
+        <div class="control-group" style="margin-top: 10px;">
+            <label>Chế độ thêm điểm:</label>
+            <button class="btn btn-red active" data-mode="red">🔴 Lớp Đỏ (Red)</button>
+            <button class="btn btn-blue" data-mode="blue">🔵 Lớp Xanh (Blue)</button>
+            <button class="btn btn-test" data-mode="test">🟡 Điểm kiểm thử (Test)</button>
+        </div>
+
+        <div class="result-box">
+            <div class="result-title">Kết quả phân loại:</div>
+            <div class="result-value" id="result-text" style="color: #94a3b8;">Chưa có điểm Test</div>
+        </div>
+
+        <button class="btn btn-clear" id="btn-clear">🗑️ Xóa toàn bộ</button>
+    </div>
+
+    <!-- Khu vực vẽ -->
+    <div class="main-content">
+        <div class="instructions">Click vào vùng trắng để thêm các điểm dữ liệu</div>
+        <canvas id="canvas" width="800" height="600"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const kSlider = document.getElementById('k-slider');
+        const kValueDisplay = document.getElementById('k-value');
+        const modeButtons = document.querySelectorAll('[data-mode]');
+        const btnClear = document.getElementById('btn-clear');
+        const resultText = document.getElementById('result-text');
+
+        let points = []; // Lưu trữ các điểm dữ liệu: {x, y, type}
+        let currentMode = 'red';
+        let testPoint = null; // Chỉ cho phép 1 điểm test tại 1 thời điểm để dễ nhìn
+
+        // Màu sắc tương ứng
+        const colors = {
+            red: '#ef4444',
+            blue: '#3b82f6',
+            test: '#facc15'
+        };
+
+        // --- Sự kiện giao diện ---
+
+        // Đổi chế độ vẽ
+        modeButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                modeButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentMode = btn.getAttribute('data-mode');
+            });
+        });
+
+        // Đổi giá trị K
+        kSlider.addEventListener('input', (e) => {
+            kValueDisplay.textContent = e.target.value;
+            draw(); // Vẽ lại và tính toán lại ngay khi kéo slider
+        });
+
+        // Xóa Canvas
+        btnClear.addEventListener('click', () => {
+            points = [];
+            testPoint = null;
+            resultText.textContent = "Chưa có điểm Test";
+            resultText.style.color = "#94a3b8";
+            draw();
+        });
+
+        // Click lên Canvas
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            if (currentMode === 'test') {
+                testPoint = { x, y, type: 'test' };
+            } else {
+                points.push({ x, y, type: currentMode });
+            }
+            draw();
+        });
+
+        // --- Core Logic KNN và Vẽ Canvas ---
+
+        // Tính khoảng cách Euclidean
+        function getDistance(p1, p2) {
+            return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        }
+
+        function draw() {
+            // Xóa canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            let k = parseInt(kSlider.value);
+            let neighbors = [];
+
+            // Nếu có điểm test, chạy thuật toán KNN
+            if (testPoint && points.length > 0) {
+                // 1. Tính khoảng cách từ điểm test tới tất cả các điểm dữ liệu
+                let distances = points.map(p => ({
+                    point: p,
+                    dist: getDistance(testPoint, p)
+                }));
+
+                // 2. Sắp xếp tăng dần theo khoảng cách
+                distances.sort((a, b) => a.dist - b.dist);
+
+                // 3. Lấy K điểm gần nhất (Nếu dữ liệu ít hơn K thì lấy tối đa số dữ liệu hiện có)
+                let actualK = Math.min(k, distances.length);
+                neighbors = distances.slice(0, actualK);
+
+                // 4. Vẽ đường nối từ điểm Test tới các hàng xóm
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]); // Nét đứt
+                neighbors.forEach(n => {
+                    ctx.beginPath();
+                    ctx.moveTo(testPoint.x, testPoint.y);
+                    ctx.lineTo(n.point.x, n.point.y);
+                    // Đổi màu đường nối theo màu của hàng xóm
+                    ctx.strokeStyle = colors[n.point.type];
+                    ctx.globalAlpha = 0.6;
+                    ctx.stroke();
+                });
+                ctx.setLineDash([]); // Reset nét liền
+                ctx.globalAlpha = 1.0;
+
+                // 5. Đếm số lượng các lớp trong K hàng xóm để phân loại
+                let counts = { red: 0, blue: 0 };
+                neighbors.forEach(n => counts[n.point.type]++);
+
+                // Cập nhật kết quả lên UI
+                if (counts.red > counts.blue) {
+                    resultText.textContent = "Lớp ĐỎ (Red)";
+                    resultText.style.color = colors.red;
+                } else if (counts.blue > counts.red) {
+                    resultText.textContent = "Lớp XANH (Blue)";
+                    resultText.style.color = colors.blue;
+                } else {
+                    resultText.textContent = "Hòa (Cần đổi K)";
+                    resultText.style.color = "#64748b";
+                }
+            } else if (!testPoint) {
+                resultText.textContent = "Chưa có điểm Test";
+                resultText.style.color = "#94a3b8";
+            }
+
+            // Vẽ các điểm dữ liệu (Train data)
+            points.forEach(p => drawCircle(p.x, p.y, colors[p.type], 8));
+
+            // Vẽ điểm Test (nếu có)
+            if (testPoint) {
+                // Vẽ quầng sáng (halo) cho điểm test
+                ctx.beginPath();
+                ctx.arc(testPoint.x, testPoint.y, 16, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(250, 204, 21, 0.3)';
+                ctx.fill();
+                
+                // Vẽ điểm test
+                drawCircle(testPoint.x, testPoint.y, colors.test, 10);
+                
+                // Viết chữ "?" giữa điểm Test
+                ctx.fillStyle = "#000";
+                ctx.font = "bold 12px Inter";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("?", testPoint.x, testPoint.y);
+            }
+        }
+
+        // Hàm hỗ trợ vẽ hình tròn có bóng (đổ shadow)
+        function drawCircle(x, y, color, radius) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            ctx.shadowBlur = 4;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 2;
+            ctx.fill();
+            
+            // Viền trắng nhẹ tạo độ nổi
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+            
+            // Reset shadow để không ảnh hưởng đến nét vẽ khác
+            ctx.shadowColor = 'transparent';
+        }
+
+        // Khởi tạo hiển thị ban đầu
+        draw();
+
+    </script>
+</body>
+</html>
